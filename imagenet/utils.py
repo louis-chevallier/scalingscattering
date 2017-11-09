@@ -1,3 +1,4 @@
+from utillc import *
 import math
 import torch
 import torch.nn.functional as F
@@ -71,7 +72,10 @@ def params_stats(mod):
     return params,stats
     
 
-def get_iterator(mode,opt):
+def get_iterator(mode,opt, cb=None, pin_memory=False):
+
+    print("get iterator")
+    
     if (opt.imagenetpath is None):
         raise (RuntimeError('Where is imagenet?'))
     if (opt.N is None):
@@ -83,9 +87,16 @@ def get_iterator(mode,opt):
 
 
     def cvload(path):
-        img = cv2.imread(path, cv2.IMREAD_COLOR)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        return img
+        #EKOX(path)
+        try :
+            img = cv2.imread(path, cv2.IMREAD_COLOR)
+            #EKOX(TYPE(img))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            #EKO()
+            return img
+        except :
+            print (path + ' not loadable')
+            return np.zeros((10, 10, 3))
 
 
     convert = tnt.transform.compose([
@@ -109,10 +120,12 @@ def get_iterator(mode,opt):
                 convert,
             ]), loader=cvload,maxSamp=opt.max_samples)
         else:
+            
+            print("coucou")
             ds =torchvision.datasets.ImageFolder(traindir, tnt.transform.compose([
-            cvtransforms.RandomSizedCrop(opt.N),
-            cvtransforms.RandomHorizontalFlip(),
-            convert,
+                cvtransforms.RandomSizedCrop(opt.N),
+                cvtransforms.RandomHorizontalFlip(),
+                convert,
             ]), loader=cvload)
     else:
         if opt.N==224:
@@ -127,11 +140,11 @@ def get_iterator(mode,opt):
             convert,
         ]), loader=cvload)
         
-
-
+    if not (cb is None) :        
+        cb(ds)
     return torch.utils.data.DataLoader(ds,
                                        batch_size=opt.batchSize, shuffle=mode,
-                                       num_workers=opt.nthread, pin_memory=False)
+                                       num_workers=opt.nthread, pin_memory=pin_memory)
 
 
 

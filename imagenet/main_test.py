@@ -1,4 +1,4 @@
-import os
+import os, sys
 import re
 import json
 import numpy as np
@@ -42,8 +42,8 @@ def parse():
     parser.add_argument('--model', default='scatresnet6_2', type=str,
                         help='name of define of the model in models')
     parser.add_argument('--batchSize', default=256, type=int)
+    parser.add_argument('--max_samples', default=10, type=int)    
     return parser
- 
  
  
  
@@ -95,6 +95,10 @@ def main():
  
     def h(sample):
         inputs = sample[0].cuda()
+
+        print inputs.cpu().numpy().shape
+        sys.exit(0)
+        
         if opt.scat > 0:
             inputs = scat(inputs)
         inputs = Variable(inputs)

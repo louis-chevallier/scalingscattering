@@ -3,7 +3,14 @@ import os, sys
 import re
 import json
 import numpy as np
- 
+import os
+import torch
+import pandas as pd
+from skimage import io, transform
+import numpy as np
+import matplotlib.pyplot as plt
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms, utils
 import pandas as pd
 from collections import OrderedDict
 from tqdm import tqdm
@@ -46,7 +53,9 @@ import torchvision.datasets as datasets
 #import torchvision.models as models
 
 hots = np.eye(1000).astype(long)
- 
+
+bbatch_size  = 2
+
 def parse():
     parser = argparse.ArgumentParser(description='Scattering on Imagenet')
     # Model options
@@ -103,35 +112,39 @@ os.environ['CUDA_VISIBLE_DEVICES'] = ''
  
 data_time = 1
  
-class Generator :
+class Generator(Dataset) :
     def __init__(self, opt, training) :
         self.i = 0
         self.fn = '/data01/IN/descs'
-        l = [f for f in listdir(self.fn)]
+        l = [f for f in listdir(self.fn) if f[1] < '5']
         N = self.N = len(l)
+        EKOX(N)
         print 'N=', self.N
         l = shuffle(l, random_state=1)
-        l = l[:N/4] if not training else l[N/4:]
+        self.l = l[:N/4] if not training else l[N/4:]
         self.fs = iter(l)
+        self.ld = {}
         pass
-    def __len__(self): return self.N
-    def next(self) :
-        while(True) :
-            self.i +=1
-            pp = self.fs.next()
-            if pp is None :
-                yield None
-            else :
-                inf = os.path.join(self.fn, pp)
-                batch = np.load(inf)
-                X, y = [batch[k] for k in batch.files]
-                yield (X, y)
+    def __len__(self): return len(self.l)
+    def __getitem__(self, idx) :
 
+        ti = idx/1
+        pp = self.l[idx]
+        inf = os.path.join(self.fn, pp)
+        batch = np.load(inf)
+        #EKOX((pp, TYPE(batch['img'])))
+        X, y = [batch[k] for k in batch.files]
+        return (X, y)
+
+                
 def main():
     model, params, stats = models.__dict__[opt.model](N=opt.N,J=opt.scat)
 
-    gen_train = Generator(opt, True)
-    gen_val = Generator(opt, False)
+    
+    gen_train = DataLoader(Generator(opt, True), batch_size=bbatch_size,
+                           shuffle=True, num_workers=opt.workers, pin_memory=True)
+    val_train = DataLoader(Generator(opt, False), batch_size=bbatch_size,
+                           shuffle=True, num_workers=opt.workers, pin_memory=True)
 
     model.cuda()
     #model = torch.nn.parallel.DistributedDataParallel(model)
@@ -163,14 +176,20 @@ def train(train_loader, model, criterion, optimizer, epoch):
     model.train()
 
     end = time.time()
+
+    chrono = []
+
     
-    for i, (input, target) in enumerate(train_loader.next()) :
-        #EKOX(i)
+    for i, (input, target) in enumerate(train_loader) :
         # measure data loading time
         data_time.update(time.time() - end)
-
-        target = torch.LongTensor(target)
-        input = torch.Tensor(input)
+        #EKOX(TYPE(input.numpy()))
+        #EKOX(TYPE(target.numpy()))
+        shp = input.numpy().shape
+        N = shp[1]
+        input = input.view(bbatch_size * N, shp[2],  shp[3],  shp[4],  shp[5])
+        #target = torch.LongTensor(np.hstack((target[0], target[1])))
+        target = target.view(bbatch_size * N) #, torch.Tensor(np.hstack((input[0], input[1])))
         
         #target = target.cuda(async=True)
         input_var = torch.autograd.Variable(input.cuda())
@@ -195,6 +214,13 @@ def train(train_loader, model, criterion, optimizer, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
 
+        chrono.append((batch_time.val, data_time.val))
+        if len(chrono) > 10 :
+            chrono = chrono[-10:]
+        EKOX(len(chrono))
+        EKOX(np.mean([x[0] for x in chrono]))
+        EKOX(np.mean([x[1] for x in chrono]))
+        
         if i % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -217,10 +243,10 @@ def validate(val_loader, model, criterion):
     model.eval()
 
     end = time.time()
-    for i, (input, target) in enumerate(val_loader.next()):
+    for i, (input, target) in enumerate(val_loader):
 
-        target = torch.LongTensor(target).cuda() #async=True)
-        input = torch.Tensor(input).cuda()
+        target = torch.LongTensor(target).cuda(async=True)
+        input = torch.Tensor(input).cuda(async=True)
         
         input_var = torch.autograd.Variable(input)#, volatile=True)
         target_var = torch.autograd.Variable(target) #, volatile=True)
